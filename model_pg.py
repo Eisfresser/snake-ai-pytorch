@@ -2,24 +2,27 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import os
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
+from model_base import BaseModel
 
-class PolicyNet(nn.Module):
-    def __init__(self, input_size: int, hidden_size: int, output_size: int) -> None:
-        super().__init__()
+class PolicyNet(BaseModel):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, 
+                 device: Optional[Union[torch.device, str]] = None) -> None:
+        super().__init__(device=device)
         self.policy: nn.Sequential = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, output_size),
             nn.Softmax(dim=-1)
         )
+        self.to(self.device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.policy(x)
 
     def get_action(self, state: Union[List[float], torch.Tensor]) -> Tuple[Union[int, torch.Tensor], torch.Tensor]:
         if isinstance(state, list):
-            state = torch.FloatTensor(state)
+            state = torch.tensor(state, dtype=torch.float).to(self.device)
         if len(state.shape) == 1:
             state = state.unsqueeze(0)
             
@@ -48,6 +51,7 @@ class PGTrainer:
         self.lr: float = lr
         self.gamma: float = gamma
         self.model: PolicyNet = model
+        self.device = self.model.device
         self.optimizer: optim.Adam = optim.Adam(model.parameters(), lr=self.lr)
         
         # Store episode data
@@ -63,7 +67,7 @@ class PGTrainer:
 
     def train_step(self, state: List[float], action: int, reward: float, next_state: List[float], done: bool) -> None:
         # Convert to tensor just to maintain interface compatibility
-        state: torch.Tensor = torch.tensor(state, dtype=torch.float)
+        state: torch.Tensor = torch.tensor(state, dtype=torch.float).to(self.device)
         
         if len(state.shape) == 1:
             state = torch.unsqueeze(state, 0)

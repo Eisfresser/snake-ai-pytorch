@@ -3,13 +3,16 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import os
-from typing import Tuple, List, Union
+from typing import Tuple, List, Union, Optional
+from model_base import BaseModel
 
-class Linear_QNet(nn.Module):
-    def __init__(self, input_size: int, hidden_size: int, output_size: int) -> None:
-        super().__init__()
+class Linear_QNet(BaseModel):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int,
+                 device: Optional[Union[torch.device, str]] = None) -> None:
+        super().__init__(device=device)
         self.linear1: nn.Linear = nn.Linear(input_size, hidden_size)
         self.linear2: nn.Linear = nn.Linear(hidden_size, output_size)
+        self.to(self.device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.linear1(x))
@@ -30,15 +33,16 @@ class QTrainer:
         self.lr: float = lr
         self.gamma: float = gamma
         self.model: Linear_QNet = model
+        self.device = self.model.device
         self.optimizer: optim.Adam = optim.Adam(model.parameters(), lr=self.lr)
         self.criterion: nn.MSELoss = nn.MSELoss()
 
     def train_step(self, state: List[float], action: List[int], reward: float, 
                   next_state: List[float], done: Union[bool, Tuple[bool, ...]]) -> None:
-        state = torch.tensor(state, dtype=torch.float)
-        next_state = torch.tensor(next_state, dtype=torch.float)
-        action = torch.tensor(action, dtype=torch.long)
-        reward = torch.tensor(reward, dtype=torch.float)
+        state = torch.tensor(state, dtype=torch.float).to(self.device)
+        next_state = torch.tensor(next_state, dtype=torch.float).to(self.device)
+        action = torch.tensor(action, dtype=torch.long).to(self.device)
+        reward = torch.tensor(reward, dtype=torch.float).to(self.device)
 
         if len(state.shape) == 1:
             state = torch.unsqueeze(state, 0)

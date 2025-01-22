@@ -4,21 +4,22 @@ import torch.optim as optim
 import torch.nn.functional as F
 import os
 import numpy as np
+from typing import List, Tuple, Union, Optional
 
 class PolicyNet(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int) -> None:
         super().__init__()
-        self.policy = nn.Sequential(
+        self.policy: nn.Sequential = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, output_size),
             nn.Softmax(dim=-1)
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.policy(x)
 
-    def get_action(self, state):
+    def get_action(self, state: List[float]) -> Tuple[int, torch.Tensor]:
         state = torch.FloatTensor(state)
         probs = self.policy(state)
         dist = torch.distributions.Categorical(probs)
@@ -26,7 +27,7 @@ class PolicyNet(nn.Module):
         log_prob = dist.log_prob(action)
         return action.item(), log_prob
 
-    def save(self, file_name='model_pg.pth'):
+    def save(self, file_name: str = 'model_pg.pth') -> None:
         model_folder_path = './model'
         if not os.path.exists(model_folder_path):
             os.makedirs(model_folder_path)
@@ -36,26 +37,26 @@ class PolicyNet(nn.Module):
 
 
 class PGTrainer:
-    def __init__(self, model, lr, gamma):
-        self.lr = lr
-        self.gamma = gamma
-        self.model = model
-        self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
+    def __init__(self, model: PolicyNet, lr: float, gamma: float) -> None:
+        self.lr: float = lr
+        self.gamma: float = gamma
+        self.model: PolicyNet = model
+        self.optimizer: optim.Adam = optim.Adam(model.parameters(), lr=self.lr)
         
         # Store episode data
         self.reset_episode()
     
-    def reset_episode(self):
-        self.log_probs = []
-        self.rewards = []
+    def reset_episode(self) -> None:
+        self.log_probs: List[torch.Tensor] = []
+        self.rewards: List[float] = []
         
-    def remember(self, log_prob, reward):
+    def remember(self, log_prob: torch.Tensor, reward: float) -> None:
         self.log_probs.append(log_prob)
         self.rewards.append(reward)
 
-    def train_step(self, state, action, reward, next_state, done):
+    def train_step(self, state: List[float], action: int, reward: float, next_state: List[float], done: bool) -> None:
         # Convert to tensor just to maintain interface compatibility
-        state = torch.tensor(state, dtype=torch.float)
+        state: torch.Tensor = torch.tensor(state, dtype=torch.float)
         
         if len(state.shape) == 1:
             state = torch.unsqueeze(state, 0)
@@ -69,25 +70,25 @@ class PGTrainer:
         # Only update policy at the end of episode
         if done:
             # Calculate discounted rewards
-            returns = []
-            G = 0
+            returns: List[float] = []
+            G: float = 0
             for r in reversed(self.rewards):
                 G = r + self.gamma * G
                 returns.insert(0, G)
-            returns = torch.tensor(returns)
+            returns_tensor: torch.Tensor = torch.tensor(returns)
             
             # Normalize returns
-            returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+            returns_tensor = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
             
             # Calculate policy loss
-            policy_loss = []
-            for log_prob, R in zip(self.log_probs, returns):
+            policy_loss: List[torch.Tensor] = []
+            for log_prob, R in zip(self.log_probs, returns_tensor):
                 policy_loss.append(-log_prob * R)
-            policy_loss = torch.stack(policy_loss).sum()
+            total_loss: torch.Tensor = torch.stack(policy_loss).sum()
             
             # Update policy
             self.optimizer.zero_grad()
-            policy_loss.backward()
+            total_loss.backward()
             self.optimizer.step()
             
             # Reset episode data

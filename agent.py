@@ -2,6 +2,7 @@ import torch
 import random
 import numpy as np
 from collections import deque
+from typing import List, Tuple, Deque, Union, Optional
 from game import SnakeGameAI, Direction, Point
 from model_dqn import Linear_QNet, QTrainer
 from model_pg import PolicyNet, PGTrainer
@@ -13,21 +14,20 @@ BATCH_SIZE = 1000
 LR = 0.001
 
 class Agent:
-
-    def __init__(self, model_type='dqn'):
-        self.n_games = 0
-        self.epsilon = 0 # randomness
-        self.gamma = 0.9 # discount rate
-        self.memory = deque(maxlen=MAX_MEMORY) # popleft()
+    def __init__(self, model_type: str = 'dqn') -> None:
+        self.n_games: int = 0
+        self.epsilon: int = 0  # randomness
+        self.gamma: float = 0.9  # discount rate
+        self.memory: Deque[Tuple[np.ndarray, List[int], float, np.ndarray, bool]] = deque(maxlen=MAX_MEMORY)
         
         if model_type.lower() == 'pg':
-            self.model = PolicyNet(input_size=11, hidden_size=256, output_size=3)
-            self.trainer = PGTrainer(self.model, lr=LR, gamma=self.gamma)
+            self.model: Union[PolicyNet, Linear_QNet] = PolicyNet(input_size=11, hidden_size=256, output_size=3)
+            self.trainer: Union[PGTrainer, QTrainer] = PGTrainer(self.model, lr=LR, gamma=self.gamma)
         else:  # default to DQN
             self.model = Linear_QNet(11, 256, 3)
             self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
-    def get_state(self, game):
+    def get_state(self, game: SnakeGameAI) -> np.ndarray:
         head = game.snake[0]
         point_l = Point(head.x - 20, head.y)
         point_r = Point(head.x + 20, head.y)
@@ -73,24 +73,24 @@ class Agent:
 
         return np.array(state, dtype=int)
 
-    def remember(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
+    def remember(self, state: np.ndarray, action: List[int], reward: float, 
+                next_state: np.ndarray, done: bool) -> None:
+        self.memory.append((state, action, reward, next_state, done))
 
-    def train_long_memory(self):
+    def train_long_memory(self) -> None:
         if len(self.memory) > BATCH_SIZE:
-            mini_sample = random.sample(self.memory, BATCH_SIZE) # list of tuples
+            mini_sample = random.sample(self.memory, BATCH_SIZE)
         else:
             mini_sample = self.memory
 
         states, actions, rewards, next_states, dones = zip(*mini_sample)
         self.trainer.train_step(states, actions, rewards, next_states, dones)
-        #for state, action, reward, nexrt_state, done in mini_sample:
-        #    self.trainer.train_step(state, action, reward, next_state, done)
 
-    def train_short_memory(self, state, action, reward, next_state, done):
+    def train_short_memory(self, state: np.ndarray, action: List[int], reward: float, 
+                         next_state: np.ndarray, done: bool) -> None:
         self.trainer.train_step(state, action, reward, next_state, done)
 
-    def get_action(self, state):
+    def get_action(self, state: np.ndarray) -> List[int]:
         # random moves: tradeoff exploration / exploitation
         self.epsilon = 80 - self.n_games
         final_move = [0,0,0]
@@ -106,18 +106,19 @@ class Agent:
         return final_move
 
 
-def train():
+def train() -> None:
     parser = argparse.ArgumentParser(description='Snake AI with different model types')
     parser.add_argument('--model', type=str, default='dqn', choices=['dqn', 'pg'],
                       help='Model type to use: dqn (Deep Q-Network) or pg (Policy Gradient)')
     args = parser.parse_args()
     
-    plot_scores = []
-    plot_mean_scores = []
-    total_score = 0
-    record = 0
+    plot_scores: List[int] = []
+    plot_mean_scores: List[float] = []
+    total_score: int = 0
+    record: int = 0
     agent = Agent(model_type=args.model)
     game = SnakeGameAI()
+    
     while True:
         # get old state
         state_old = agent.get_state(game)

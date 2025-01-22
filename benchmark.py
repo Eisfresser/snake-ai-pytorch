@@ -5,7 +5,7 @@ from typing import Dict
 from tabulate import tabulate
 from game import SnakeGameAI
 from model_dqn import Linear_QNet, QTrainer
-from model_pg import PolicyNet, PGTrainer
+from model_ppo import ActorCritic, PPOTrainer
 from agent import Agent
 import psutil
 import numpy as np
@@ -36,7 +36,7 @@ def run_benchmark(model, device: str, duration: int = 60) -> Dict:
                 prediction = model(state_old_tensor)
                 final_move = [0, 0, 0]
                 final_move[torch.argmax(prediction).item()] = 1
-            else:  # PolicyNet
+            else:  # ActorCritic
                 state_old_tensor = torch.tensor(state_old, dtype=torch.float).to(device)
                 action, _ = model.get_action(state_old_tensor)
                 final_move = [0, 0, 0]
@@ -69,8 +69,8 @@ def run_training_benchmark(model, device: str, duration: int = 60) -> Dict:
     if isinstance(model, Linear_QNet):
         trainer = QTrainer(model, lr=0.001, gamma=0.9)
         trainer.model.to(device)  # Ensure model in trainer is on correct device
-    else:  # PolicyNet
-        trainer = PGTrainer(model, lr=0.001, gamma=0.9)
+    else:  # ActorCritic
+        trainer = PPOTrainer(model, lr=0.001, gamma=0.9)
         trainer.model.to(device)  # Ensure model in trainer is on correct device
     
     metrics = {
@@ -103,10 +103,10 @@ def run_training_benchmark(model, device: str, duration: int = 60) -> Dict:
         if isinstance(trainer, QTrainer):
             trainer.train_step(state_tensor, action_tensor, reward, next_state_tensor, done)
             metrics['total_training_steps'] += 1
-        else:  # PGTrainer
+        else:  # PPOTrainer
             _, log_prob = model.get_action(state_tensor)
             trainer.remember(log_prob, reward)
-            if len(trainer.log_probs) >= 10:  # Train every 10 steps for PG
+            if len(trainer.log_probs) >= 10:  # Train every 10 steps for PPO
                 trainer.train_step(state_tensor, 0, reward, next_state_tensor, True)
                 trainer.reset_episode()
                 metrics['total_training_steps'] += 1
@@ -151,8 +151,8 @@ def main():
         # Initialize models for this device
         dqn_model = Linear_QNet(input_size, hidden_size, output_size, device)
         dqn_model.to(device)
-        pg_model = PolicyNet(input_size, hidden_size, output_size, device)
-        pg_model.to(device)
+        ppo_model = ActorCritic(input_size, hidden_size, output_size, device)
+        ppo_model.to(device)
         
         # Try to load trained models if available
         try:
@@ -165,13 +165,13 @@ def main():
             print(f"Error loading DQN model: {e}, using untrained model")
             
         try:
-            state_dict = torch.load('./model/model_pg.pth', map_location=device, weights_only=False)
-            pg_model.load_state_dict(state_dict)
-            print("Loaded PG model successfully")
+            state_dict = torch.load('./model/model_ppo.pth', map_location=device, weights_only=False)
+            ppo_model.load_state_dict(state_dict)
+            print("Loaded PPO model successfully")
         except FileNotFoundError:
-            print("No trained PG model found, using untrained model")
+            print("No trained PPO model found, using untrained model")
         except Exception as e:
-            print(f"Error loading PG model: {e}, using untrained model")
+            print(f"Error loading PPO model: {e}, using untrained model")
 
         if args.type in ['play', 'both']:
             print("\nTesting DQN model gameplay...")
@@ -186,16 +186,16 @@ def main():
                 'Moves/sec': round(dqn_play_metrics['moves_per_second'], 2)
             })
             
-            print("\nTesting PG model gameplay...")
-            pg_play_metrics = run_benchmark(pg_model, device, args.duration)
+            print("\nTesting PPO model gameplay...")
+            ppo_play_metrics = run_benchmark(ppo_model, device, args.duration)
             results.append({
-                'Model': 'PG',
+                'Model': 'PPO',
                 'Type': 'Play',
                 'Device': device,
-                'Games': pg_play_metrics['total_games'],
-                'Avg Score': round(pg_play_metrics['avg_score'], 2),
-                'Max Score': pg_play_metrics['max_score'],
-                'Moves/sec': round(pg_play_metrics['moves_per_second'], 2)
+                'Games': ppo_play_metrics['total_games'],
+                'Avg Score': round(ppo_play_metrics['avg_score'], 2),
+                'Max Score': ppo_play_metrics['max_score'],
+                'Moves/sec': round(ppo_play_metrics['moves_per_second'], 2)
             })
 
         if args.type in ['train', 'both']:
@@ -212,17 +212,17 @@ def main():
                 'Peak Memory (MB)': round(dqn_train_metrics['peak_memory_usage_mb'], 2)
             })
             
-            print("\nTesting PG model training...")
-            pg_train_metrics = run_training_benchmark(pg_model, device, args.duration)
+            print("\nTesting PPO model training...")
+            ppo_train_metrics = run_training_benchmark(ppo_model, device, args.duration)
             results.append({
-                'Model': 'PG',
+                'Model': 'PPO',
                 'Type': 'Train',
                 'Device': device,
-                'Training Steps': pg_train_metrics['total_training_steps'],
-                'Episodes': pg_train_metrics['total_episodes'],
-                'Steps/sec': round(pg_train_metrics['training_steps_per_second'], 2),
-                'Avg Memory (MB)': round(pg_train_metrics['avg_memory_usage_mb'], 2),
-                'Peak Memory (MB)': round(pg_train_metrics['peak_memory_usage_mb'], 2)
+                'Training Steps': ppo_train_metrics['total_training_steps'],
+                'Episodes': ppo_train_metrics['total_episodes'],
+                'Steps/sec': round(ppo_train_metrics['training_steps_per_second'], 2),
+                'Avg Memory (MB)': round(ppo_train_metrics['avg_memory_usage_mb'], 2),
+                'Peak Memory (MB)': round(ppo_train_metrics['peak_memory_usage_mb'], 2)
             })
         
     # Print results in a nice table

@@ -11,6 +11,8 @@ class PolicyNet(BaseModel):
         self.policy: nn.Sequential = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
+            nn.Linear(hidden_size, hidden_size),
+            nn.ReLU(),
             nn.Linear(hidden_size, output_size),
             nn.Softmax(dim=-1)
         ).to(self.device)
@@ -50,7 +52,8 @@ class PGTrainer:
         self.gamma: float = gamma
         self.model: PolicyNet = model
         self.device = self.model.device
-        self.optimizer: optim.Adam = optim.Adam(model.parameters(), lr=self.lr)
+        self.optimizer = optim.RMSprop(model.parameters(), lr=self.lr, alpha=0.99, eps=1e-8)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=100, gamma=0.9)
         
         # Store episode data
         self.reset_episode()
@@ -106,6 +109,7 @@ class PGTrainer:
             self.optimizer.zero_grad()
             total_loss.backward()
             self.optimizer.step()
+            self.scheduler.step()
             
             # Reset episode data
             self.reset_episode()

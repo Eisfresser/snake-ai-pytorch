@@ -2,10 +2,10 @@ import torch
 import random
 import numpy as np
 from collections import deque
-from typing import List, Tuple, Deque, Union
+from typing import List, Tuple, Deque
 from game import SnakeGameAI, Direction, Point
 from model_dqn import Linear_QNet, QTrainer
-from model_pg import PolicyNet, PGTrainer
+from model_ppo import ActorCritic, PPOTrainer
 from helper import plot
 import argparse
 
@@ -17,12 +17,12 @@ class Agent:
     def __init__(self, device: str, model_type: str = 'dqn') -> None:
         self.n_games: int = 0
         self.epsilon: int = 0  # randomness
-        self.gamma: float = 0.9  # discount rate
+        self.gamma: float = 0.99  # discount rate
         self.memory: Deque[Tuple[np.ndarray, List[int], float, np.ndarray, bool]] = deque(maxlen=MAX_MEMORY)
         
-        if model_type.lower() == 'pg':
-            self.model: Union[PolicyNet, Linear_QNet] = PolicyNet(input_size=11, hidden_size=256, output_size=3, device=device)
-            self.trainer: Union[PGTrainer, QTrainer] = PGTrainer(self.model, lr=LR, gamma=self.gamma)
+        if model_type.lower() == 'ppo':
+            self.model: ActorCritic = ActorCritic(input_size=11, hidden_size=256, output_size=3, device=device)
+            self.trainer: PPOTrainer = PPOTrainer(self.model, lr=LR, gamma=self.gamma)
         else:  # default to DQN
             self.model = Linear_QNet(11, 256, 3, device)
             self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
@@ -108,15 +108,15 @@ class Agent:
 
 def train() -> None:
     parser = argparse.ArgumentParser(description='Snake AI with different model types')
-    parser.add_argument('--model', type=str, default='dqn', choices=['dqn', 'pg'],
-                      help='Model type to use: dqn (Deep Q-Network) or pg (Policy Gradient)')
+    parser.add_argument('--model', type=str, default='dqn', choices=['dqn', 'ppo'],
+                      help='Model type to use: dqn (Deep Q-Network) or ppo (Proximal Policy Optimization)')
     args = parser.parse_args()
     
     plot_scores: List[int] = []
     plot_mean_scores: List[float] = []
     total_score: int = 0
     record: int = 0
-    agent = Agent(model_type=args.model)
+    agent = Agent(model_type=args.model, device='cpu')
     game = SnakeGameAI()
     
     while True:

@@ -79,7 +79,8 @@ class PPOTrainer:
                  epochs: int = 10,
                  value_coef: float = 0.5,
                  entropy_coef: float = 0.01,
-                 batch_size: int = 32) -> None:
+                 batch_size: int = 32,
+                 mini_batch_size: int = 8) -> None:
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=lr)
         self.gamma = gamma
@@ -88,6 +89,7 @@ class PPOTrainer:
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
         self.batch_size = batch_size
+        self.mini_batch_size = mini_batch_size
         
         # Memory buffers for experience collection
         self.states = []
@@ -203,51 +205,71 @@ class PPOTrainer:
         
         # Normalize advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        # PPO update for specified number of epochs
+        
+        batch_size = states.size(0)
+        indices = torch.randperm(batch_size)
+        
+        # Track total losses
         total_policy_loss = 0
         total_value_loss = 0
         total_entropy = 0
+        n_updates = 0
 
+        # PPO update for specified number of epochs
         for _ in range(self.epochs):
-            # Get new log probs, values and entropy
-            new_log_probs, values, entropy = self.model.evaluate_actions(states, actions)
+            # Process data in mini-batches
+            for start_idx in range(0, batch_size, self.mini_batch_size):
+                # Get mini-batch indices
+                mb_indices = indices[start_idx:start_idx + self.mini_batch_size]
+                
+                # Get mini-batch data
+                mb_states = states[mb_indices]
+                mb_actions = actions[mb_indices]
+                mb_old_log_probs = old_log_probs[mb_indices]
+                mb_returns = returns[mb_indices]
+                mb_advantages = advantages[mb_indices]
+                
+                # Get new log probs, values and entropy for mini-batch
+                new_log_probs, values, entropy = self.model.evaluate_actions(mb_states, mb_actions)
+                
+                # Calculate ratio between new and old probabilities
+                ratio = torch.exp(new_log_probs - mb_old_log_probs)
+                
+                # Calculate surrogate losses
+                surr1 = ratio * mb_advantages
+                surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * mb_advantages
+                
+                # Calculate policy loss using PPO clipped objective
+                policy_loss = -torch.min(surr1, surr2).mean()
+                
+                # Calculate value loss
+                value_loss = 0.5 * (mb_returns - values.squeeze()).pow(2).mean()
+                
+                # Calculate entropy bonus
+                entropy_loss = -entropy.mean()
+                
+                # Total loss
+                loss = (policy_loss + 
+                       self.value_coef * value_loss + 
+                       self.entropy_coef * entropy_loss)
+                
+                # Perform update
+                self.optimizer.zero_grad()
+                loss.backward()
+                # Clip gradients to prevent explosive gradients
+                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                self.optimizer.step()
+                
+                total_policy_loss += policy_loss.item()
+                total_value_loss += value_loss.item()
+                total_entropy += entropy_loss.item()
+                n_updates += 1
             
-            # Calculate ratio between new and old probabilities
-            ratio = torch.exp(new_log_probs - old_log_probs)
-            
-            # Calculate surrogate losses
-            surr1 = ratio * advantages
-            surr2 = torch.clamp(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages
-            
-            # Calculate policy loss using PPO clipped objective
-            policy_loss = -torch.min(surr1, surr2).mean()
-            
-            # Calculate value loss
-            value_loss = 0.5 * (returns - values.squeeze()).pow(2).mean()
-            
-            # Calculate entropy bonus
-            entropy_loss = -entropy.mean()
-            
-            # Total loss
-            loss = (policy_loss + 
-                   self.value_coef * value_loss + 
-                   self.entropy_coef * entropy_loss)
-            
-            # Perform update
-            self.optimizer.zero_grad()
-            loss.backward()
-            # Clip gradients to prevent explosive gradients
-            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
-            self.optimizer.step()
-            
-            total_policy_loss += policy_loss.item()
-            total_value_loss += value_loss.item()
-            total_entropy += entropy_loss.item()
+            # Shuffle indices for next epoch
+            indices = torch.randperm(batch_size)
 
-        num_updates = self.epochs
         return {
-            'policy_loss': total_policy_loss / num_updates,
-            'value_loss': total_value_loss / num_updates,
-            'entropy': total_entropy / num_updates
+            'policy_loss': total_policy_loss / n_updates,
+            'value_loss': total_value_loss / n_updates,
+            'entropy': total_entropy / n_updates
         }

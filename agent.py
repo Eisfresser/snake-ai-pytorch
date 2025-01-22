@@ -19,10 +19,18 @@ class Agent:
         self.epsilon: int = 0  # randomness
         self.gamma: float = 0.99  # discount rate
         self.memory: Deque[Tuple[np.ndarray, List[int], float, np.ndarray, bool]] = deque(maxlen=MAX_MEMORY)
+        self.model_type = model_type.lower()
         
-        if model_type.lower() == 'ppo':
+        if self.model_type == 'ppo':
             self.model: ActorCritic = ActorCritic(input_size=11, hidden_size=256, output_size=3, device=device)
             self.trainer: PPOTrainer = PPOTrainer(self.model, lr=LR, gamma=self.gamma)
+            # Initialize PPO metrics
+            self.ppo_metrics = {
+                'kl_divergence': [],
+                'clip_fraction': [],
+                'explained_variance': [],
+                'average_advantage': []
+            }
         else:  # default to DQN
             self.model = Linear_QNet(11, 256, 3, device)
             self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
@@ -84,7 +92,13 @@ class Agent:
             mini_sample = self.memory
 
         states, actions, rewards, next_states, dones = zip(*mini_sample)
-        self.trainer.train_step(states, actions, rewards, next_states, dones)
+        metrics = self.trainer.train_step(states, actions, rewards, next_states, dones)
+        
+        # Store PPO metrics if using PPO
+        if self.model_type == 'ppo' and isinstance(metrics, dict):
+            for key in self.ppo_metrics:
+                if key in metrics:
+                    self.ppo_metrics[key].append(metrics[key])
 
     def train_short_memory(self, state: np.ndarray, action: List[int], reward: float, 
                          next_state: np.ndarray, done: bool) -> None:
@@ -146,7 +160,16 @@ def train() -> None:
                 record = score
                 agent.model.save()
 
-            print('Game', agent.n_games, 'Score', score, 'Record:', record)
+            if agent.model_type == 'ppo':
+                # Calculate mean of recent metrics
+                recent_metrics = {k: np.mean(v[-10:]) if v else 0 for k, v in agent.ppo_metrics.items()}
+                print(f'Game {agent.n_games}, Score {score}, Record: {record}',
+                      f'PPO Metrics - KL: {recent_metrics["kl_divergence"]:.3f}, '
+                      f'Clip: {recent_metrics["clip_fraction"]:.3f}, '
+                      f'ExpVar: {recent_metrics["explained_variance"]:.3f}, '
+                      f'AvgAdv: {recent_metrics["average_advantage"]:.3f}')
+            else:
+                print('Game', agent.n_games, 'Score', score, 'Record:', record)
 
             plot_scores.append(score)
             total_score += score

@@ -24,8 +24,6 @@ class PolicyNetwork(nn.Module):
 class ValueNetwork(nn.Module):
     def __init__(self, input_size: int, hidden_size: int) -> None:
         super().__init__()
-        # Value network can have a different architecture
-        # Here we use a deeper network with different hidden sizes
         self.net = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
@@ -103,6 +101,8 @@ class PPOTrainer:
                  mini_batch_size: int = 8) -> None:
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=lr)
+        # Add learning rate scheduler
+        self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.995)
         self.gamma = gamma
         self.epsilon = epsilon  # PPO clipping parameter
         self.epochs = epochs    # Number of epochs to update policy
@@ -256,7 +256,14 @@ class PPOTrainer:
         total_policy_loss = 0
         total_value_loss = 0
         total_entropy = 0
+        total_kl_div = 0
+        total_clip_fraction = 0
+        total_advantages = 0
         n_updates = 0
+
+        # For explained variance calculation
+        all_values = []
+        all_returns = []
 
         # PPO update for specified number of epochs
         for _ in range(self.epochs):
@@ -277,6 +284,13 @@ class PPOTrainer:
                 
                 # Calculate ratio between new and old probabilities
                 ratio = torch.exp(new_log_probs - mb_old_log_probs)
+                
+                # Calculate KL divergence
+                kl_div = ((torch.exp(mb_old_log_probs) * 
+                          (mb_old_log_probs - new_log_probs)).mean().item())
+                
+                # Calculate clip fraction
+                clip_fraction = (torch.abs(ratio - 1.0) > self.epsilon).float().mean().item()
                 
                 # Calculate surrogate losses
                 surr1 = ratio * mb_advantages
@@ -306,16 +320,31 @@ class PPOTrainer:
                 nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
                 self.optimizer.step()
                 
+                # Update loss tracking
                 total_policy_loss += policy_loss.item()
                 total_value_loss += value_loss.item()
                 total_entropy += entropy_loss.item()
+                total_kl_div += kl_div
+                total_clip_fraction += clip_fraction
+                total_advantages += mb_advantages.abs().mean().item()
+                all_values.extend(values.reshape(-1).detach().cpu().numpy())
+                all_returns.extend(mb_returns.detach().cpu().numpy())
                 n_updates += 1
-            
-            # Shuffle indices for next epoch
-            indices = torch.randperm(batch_size)
-
+        
+        # Step the learning rate scheduler after each update
+        self.scheduler.step()
+        
+        # Calculate explained variance
+        all_values = np.array(all_values)
+        all_returns = np.array(all_returns)
+        explained_var = 1 - np.var(all_returns - all_values) / (np.var(all_returns) + 1e-8)
+        
         return {
             'policy_loss': total_policy_loss / n_updates,
             'value_loss': total_value_loss / n_updates,
-            'entropy': total_entropy / n_updates
+            'entropy': total_entropy / n_updates,
+            'kl_divergence': total_kl_div / n_updates,
+            'clip_fraction': total_clip_fraction / n_updates,
+            'explained_variance': explained_var,
+            'average_advantage': total_advantages / n_updates
         }

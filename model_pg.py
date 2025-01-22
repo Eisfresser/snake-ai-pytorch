@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import os
-import numpy as np
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union
 
 class PolicyNet(nn.Module):
     def __init__(self, input_size: int, hidden_size: int, output_size: int) -> None:
@@ -19,13 +17,22 @@ class PolicyNet(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.policy(x)
 
-    def get_action(self, state: List[float]) -> Tuple[int, torch.Tensor]:
-        state = torch.FloatTensor(state)
+    def get_action(self, state: Union[List[float], torch.Tensor]) -> Tuple[Union[int, torch.Tensor], torch.Tensor]:
+        if isinstance(state, list):
+            state = torch.FloatTensor(state)
+        if len(state.shape) == 1:
+            state = state.unsqueeze(0)
+            
         probs = self.policy(state)
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
         log_prob = dist.log_prob(action)
-        return action.item(), log_prob
+        
+        # If single state, return scalar action
+        if len(state) == 1:
+            return action.item(), log_prob
+        # If batch of states, return tensor of actions
+        return action, log_prob
 
     def save(self, file_name: str = 'model_pg.pth') -> None:
         model_folder_path = './model'
@@ -63,12 +70,19 @@ class PGTrainer:
         
         # Get action and log probability
         _, log_prob = self.model.get_action(state)
+        if isinstance(log_prob, tuple):
+            log_prob = log_prob[1]  # Extract just the log probability
         
         # Store the transition
         self.remember(log_prob, reward)
         
         # Only update policy at the end of episode
         if done:
+
+            # self.rewards may be list of int or list of list of int, remove the outer list
+            if not isinstance(self.rewards[0], int):
+                self.rewards = [item for sublist in self.rewards for item in sublist]
+
             # Calculate discounted rewards
             returns: List[float] = []
             G: float = 0

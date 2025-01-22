@@ -2,7 +2,7 @@ import torch
 import random
 import numpy as np
 from collections import deque
-from typing import List, Tuple, Deque, Union, Optional
+from typing import List, Tuple, Deque, Union
 from game import SnakeGameAI, Direction, Point
 from model_dqn import Linear_QNet, QTrainer
 from model_pg import PolicyNet, PGTrainer

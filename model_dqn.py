@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import os
-from typing import Tuple, List, Union, Optional
+from typing import Tuple, List, Union
 
 class Linear_QNet(nn.Module):
     def __init__(self, input_size: int, hidden_size: int, output_size: int) -> None:

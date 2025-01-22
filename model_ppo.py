@@ -176,24 +176,47 @@ class PPOTrainer:
                     next_value: float,
                     dones: List[bool],
                     gamma: float = 0.99,
-                    lambda_: float = 0.95) -> Tuple[List[float], List[float]]:
-        gae = 0
-        returns = []
-        advantages = []
+                    lambda_: float = 0.95) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Compute Generalized Advantage Estimation (GAE) efficiently using vectorized operations.
         
-        for step in reversed(range(len(rewards))):
-            if step == len(rewards) - 1:
-                next_non_terminal = 1.0 - dones[-1]
-                next_value = next_value
-            else:
-                next_non_terminal = 1.0 - dones[step]
-                next_value = values[step + 1]
-                
-            delta = rewards[step] + gamma * next_value * next_non_terminal - values[step]
-            gae = delta + gamma * lambda_ * next_non_terminal * gae
-            returns.insert(0, gae + values[step])
-            advantages.insert(0, gae)
+        Args:
+            rewards: List of rewards for each step
+            values: List of value estimates for each state
+            next_value: Value estimate for the next state
+            dones: List of done flags for each step
+            gamma: Discount factor
+            lambda_: GAE smoothing parameter
             
+        Returns:
+            Tuple of (returns, advantages) as PyTorch tensors
+        """
+        # Convert inputs to tensors
+        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.model.device)
+        values = torch.tensor(values, dtype=torch.float32, device=self.model.device)
+        dones = torch.tensor(dones, dtype=torch.float32, device=self.model.device)
+        
+        # Append next value to values tensor for easier computation
+        values = torch.cat([values, torch.tensor([next_value], device=self.model.device)])
+        
+        # Create masks for non-terminal states
+        non_terminal = 1.0 - dones
+        
+        # Calculate TD errors
+        deltas = rewards + gamma * values[1:] * non_terminal - values[:-1]
+        
+        # Initialize advantages tensor
+        advantages = torch.zeros_like(rewards)
+        
+        # Compute GAE
+        gae = 0
+        for t in reversed(range(len(rewards))):
+            gae = deltas[t] + gamma * lambda_ * non_terminal[t] * gae
+            advantages[t] = gae
+            
+        # Calculate returns
+        returns = advantages + values[:-1]
+        
         return returns, advantages
 
     def update(self, 
@@ -242,8 +265,11 @@ class PPOTrainer:
                 # Calculate policy loss using PPO clipped objective
                 policy_loss = -torch.min(surr1, surr2).mean()
                 
-                # Calculate value loss
-                value_loss = 0.5 * (mb_returns - values.squeeze()).pow(2).mean()
+                # Calculate value loss with clipping
+                values_clipped = mb_returns + torch.clamp(values.squeeze() - mb_returns, -self.epsilon, self.epsilon)
+                value_loss_1 = (mb_returns - values.squeeze()).pow(2)
+                value_loss_2 = (mb_returns - values_clipped).pow(2)
+                value_loss = 0.5 * torch.max(value_loss_1, value_loss_2).mean()
                 
                 # Calculate entropy bonus
                 entropy_loss = -entropy.mean()

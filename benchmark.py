@@ -38,7 +38,7 @@ def run_benchmark(model, device: str, duration: int = 60) -> Dict:
                 final_move[torch.argmax(prediction).item()] = 1
             else:  # ActorCritic
                 state_old_tensor = torch.tensor(state_old, dtype=torch.float).to(device)
-                action, _ = model.get_action(state_old_tensor)
+                action, _, _ = model.get_action(state_old_tensor)  # Unpack all three values, ignore log_prob and value
                 final_move = [0, 0, 0]
                 final_move[action] = 1
             
@@ -88,32 +88,51 @@ def run_training_benchmark(model, device: str, duration: int = 60) -> Dict:
         # Get sample training data
         state = agent.get_state(game)
         state_tensor = torch.tensor(state, dtype=torch.float).to(device)
-        action = [1, 0, 0]  # Always go straight for benchmark
-        action_tensor = torch.tensor(action, dtype=torch.long).to(device)
+
+        # Get action based on model type
+        if isinstance(model, ActorCritic):
+            action, log_prob, _ = model.get_action(state_tensor)  # For PPO
+            final_move = [0, 0, 0]
+            final_move[action] = 1
+        else:  # DQN
+            prediction = model(state_tensor)
+            final_move = [0, 0, 0]
+            final_move[torch.argmax(prediction).item()] = 1
+
         reward = torch.tensor([0], dtype=torch.float).to(device)  # Convert reward to tensor on device
         next_state = state  # Use same state for simplicity
         next_state_tensor = torch.tensor(next_state, dtype=torch.float).to(device)
         done = False
         
-        # Track memory usage
-        memory_mb = process.memory_info().rss / 1024 / 1024
-        memory_samples.append(memory_mb)
+        # Record metrics
+        metrics['total_training_steps'] += 1
         
         # Perform training step
         if isinstance(trainer, QTrainer):
-            trainer.train_step(state_tensor, action_tensor, reward, next_state_tensor, done)
-            metrics['total_training_steps'] += 1
+            trainer.train_step(state_tensor, torch.tensor(final_move, dtype=torch.long).to(device), reward, next_state_tensor, done)
         else:  # PPOTrainer
-            _, log_prob = model.get_action(state_tensor)
-            trainer.remember(log_prob, reward)
-            if len(trainer.log_probs) >= 10:  # Train every 10 steps for PPO
-                trainer.train_step(state_tensor, 0, reward, next_state_tensor, True)
-                trainer.reset_episode()
-                metrics['total_training_steps'] += 1
+            # Store experience in PPO memory buffers
+            trainer.states.append(state)
+            trainer.actions.append(action)
+            trainer.rewards.append(reward.item())
+            trainer.dones.append(done)
+            trainer.log_probs.append(log_prob)
+            
+            # Train every 10 steps for PPO
+            if len(trainer.states) >= 10:
+                trainer.train_step(state_tensor, action, reward, next_state_tensor, done)
+                # Clear memory after training
+                trainer.states.clear()
+                trainer.actions.clear()
+                trainer.rewards.clear()
+                trainer.dones.clear()
+                trainer.log_probs.clear()
+                trainer.values.clear()
+                metrics['total_episodes'] += 1
         
-        # Every 100 steps is considered an episode for benchmarking
-        if metrics['total_training_steps'] % 100 == 0:
-            metrics['total_episodes'] += 1
+        # Track memory usage
+        memory_mb = process.memory_info().rss / 1024 / 1024
+        memory_samples.append(memory_mb)
     
     end_time = time.time()
     elapsed_time = end_time - start_time

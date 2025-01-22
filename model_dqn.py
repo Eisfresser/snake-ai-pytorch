@@ -3,8 +3,11 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import os
-from typing import Tuple, List, Union, Optional
+from typing import Tuple, List, Union
 from model_base import BaseModel
+import warnings
+# Suppress tensor construction warnings
+warnings.filterwarnings('ignore', message='To copy construct from a tensor*')
 
 class Linear_QNet(BaseModel):
     def __init__(self, input_size: int, hidden_size: int, output_size: int,

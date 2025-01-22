@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import os
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union
 from model_base import BaseModel
 
 class PolicyNet(BaseModel):

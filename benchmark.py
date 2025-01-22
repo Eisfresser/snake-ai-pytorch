@@ -82,7 +82,6 @@ def run_training_benchmark(model, device: str, duration: int = 60) -> Dict:
     }
     
     memory_samples = []
-    loss_values = []
     start_time = time.time()
     
     while time.time() - start_time < duration:
@@ -226,11 +225,21 @@ def main():
                 'Peak Memory (MB)': round(pg_train_metrics['peak_memory_usage_mb'], 2)
             })
         
-        # Print results in a nice table
-        headers = list(results[0].keys())
-        table = [[result[col] for col in headers] for result in results]
-        print("\nBenchmark Results:")
-        print(tabulate(table, headers=headers, tablefmt="grid"))
+    # Print results in a nice table
+    play_results = [r for r in results if r['Type'] == 'Play']
+    train_results = [r for r in results if r['Type'] == 'Train']
+    
+    if play_results:
+        play_headers = ['Model', 'Type', 'Device', 'Games', 'Avg Score', 'Max Score', 'Moves/sec']
+        play_table = [[result[col] for col in play_headers] for result in play_results]
+        print("\nGameplay Benchmark Results:")
+        print(tabulate(play_table, headers=play_headers, tablefmt="grid"))
+        
+    if train_results:
+        train_headers = ['Model', 'Type', 'Device', 'Training Steps', 'Episodes', 'Steps/sec', 'Avg Memory (MB)', 'Peak Memory (MB)']
+        train_table = [[result[col] for col in train_headers] for result in train_results]
+        print("\nTraining Benchmark Results:")
+        print(tabulate(train_table, headers=train_headers, tablefmt="grid"))
 
 if __name__ == "__main__":
     main()

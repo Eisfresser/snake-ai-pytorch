@@ -3,8 +3,10 @@ import random
 import numpy as np
 from collections import deque
 from game import SnakeGameAI, Direction, Point
-from model import Linear_QNet, QTrainer
+from model_dqn import Linear_QNet, QTrainer
+from model_pg import PolicyNet, PGTrainer
 from helper import plot
+import argparse
 
 MAX_MEMORY = 100_000
 BATCH_SIZE = 1000
@@ -12,14 +14,18 @@ LR = 0.001
 
 class Agent:
 
-    def __init__(self):
+    def __init__(self, model_type='dqn'):
         self.n_games = 0
         self.epsilon = 0 # randomness
         self.gamma = 0.9 # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # popleft()
-        self.model = Linear_QNet(11, 256, 3)
-        self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
-
+        
+        if model_type.lower() == 'pg':
+            self.model = PolicyNet(input_size=11, hidden_size=256, output_size=3)
+            self.trainer = PGTrainer(self.model, lr=LR, gamma=self.gamma)
+        else:  # default to DQN
+            self.model = Linear_QNet(11, 256, 3)
+            self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     def get_state(self, game):
         head = game.snake[0]
@@ -101,11 +107,16 @@ class Agent:
 
 
 def train():
+    parser = argparse.ArgumentParser(description='Snake AI with different model types')
+    parser.add_argument('--model', type=str, default='dqn', choices=['dqn', 'pg'],
+                      help='Model type to use: dqn (Deep Q-Network) or pg (Policy Gradient)')
+    args = parser.parse_args()
+    
     plot_scores = []
     plot_mean_scores = []
     total_score = 0
     record = 0
-    agent = Agent()
+    agent = Agent(model_type=args.model)
     game = SnakeGameAI()
     while True:
         # get old state

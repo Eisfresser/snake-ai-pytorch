@@ -6,28 +6,48 @@ import numpy as np
 from typing import List, Tuple, Union, Dict
 from model_base import BaseModel
 
-class ActorCritic(BaseModel):
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, device: str) -> None:
-        super().__init__(device=device)
-        
-        # Actor network (policy)
-        self.actor = nn.Sequential(
+class PolicyNetwork(nn.Module):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, output_size),
             nn.Softmax(dim=-1)
-        ).to(self.device)
-        
-        # Critic network (value function)
-        self.critic = nn.Sequential(
+        )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+class ValueNetwork(nn.Module):
+    def __init__(self, input_size: int, hidden_size: int) -> None:
+        super().__init__()
+        # Value network can have a different architecture
+        # Here we use a deeper network with different hidden sizes
+        self.net = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_size, hidden_size),
+            nn.Linear(hidden_size, hidden_size // 2),
             nn.ReLU(),
-            nn.Linear(hidden_size, 1)
-        ).to(self.device)
+            nn.Linear(hidden_size // 2, hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, 1)
+        )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x)
+
+class ActorCritic(BaseModel):
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, device: str) -> None:
+        super().__init__(device=device)
+        
+        # Actor network (policy)
+        self.actor = PolicyNetwork(input_size, hidden_size, output_size).to(self.device)
+        
+        # Critic network (value function)
+        self.critic = ValueNetwork(input_size, hidden_size).to(self.device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # For compatibility with DQN interface, return only actor output

@@ -17,52 +17,20 @@ class BaseModel(nn.Module, ABC):
         
         Args:
             device: Device to use. Can be 'cpu', 'mps', or None (auto-detect).
-                   Also accepts torch.device objects.
+                   Also accepts torch.device objects. If None, will use the default
+                   device or auto-detect based on system capabilities.
         """
         super().__init__()
-        self._device = None
+        # Initialize device before any other operations
         if device is not None:
-            self.device = device  # This will trigger the setter
-
-    @classmethod
-    def set_default_device(cls, device: Optional[Union[torch.device, str]] = None) -> None:
-        """Set the default device for all new model instances.
-        
-        Args:
-            device: Device to use. Can be 'cpu', 'mps', or None (auto-detect).
-                   Also accepts torch.device objects.
-        """
-        if device is None:
-            cls._default_device = None
+            self.device = torch.device(device)
+        elif self._default_device is not None:
+            self.device = self._default_device
         else:
-            cls._default_device = torch.device(device)
-
-    @property
-    def device(self) -> torch.device:
-        """Get the current device of the model.
+            self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
         
-        Returns:
-            torch.device: The device the model is currently on
-        """
-        if self._device is None:
-            if self._default_device is not None:
-                self._device = self._default_device
-            else:
-                self._device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-            self.to(self._device)
-        return self._device
-
-    @device.setter
-    def device(self, device: Union[torch.device, str]) -> None:
-        """Set the device for this model instance.
-        
-        Args:
-            device: Device to use. Can be 'cpu', 'mps', or a torch.device object.
-        """
-        new_device = torch.device(device)
-        if self._device != new_device:
-            self._device = new_device
-            self.to(self._device)
+        # Move model to device immediately
+        self.to(self.device)
 
     @abstractmethod
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -97,4 +65,6 @@ class BaseModel(nn.Module, ABC):
         """
         model_folder_path = './model'
         file_name = os.path.join(model_folder_path, file_name)
-        self.load_state_dict(torch.load(file_name, map_location=self.device))
+        state_dict = torch.load(file_name, map_location=self.device)
+        self.load_state_dict(state_dict)
+        self.to(self.device)  # Ensure model is on correct device after loading

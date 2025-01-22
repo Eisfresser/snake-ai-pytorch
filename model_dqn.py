@@ -8,11 +8,13 @@ from model_base import BaseModel
 
 class Linear_QNet(BaseModel):
     def __init__(self, input_size: int, hidden_size: int, output_size: int,
-                 device: Optional[Union[torch.device, str]] = None) -> None:
+                 device: str) -> None:
         super().__init__(device=device)
-        self.linear1: nn.Linear = nn.Linear(input_size, hidden_size)
-        self.linear2: nn.Linear = nn.Linear(hidden_size, output_size)
-        self.to(self.device)
+        self._init_layers(input_size, hidden_size, output_size)
+
+    def _init_layers(self, input_size: int, hidden_size: int, output_size: int) -> None:
+        self.linear1 = nn.Linear(input_size, hidden_size).to(self.device)
+        self.linear2 = nn.Linear(hidden_size, output_size).to(self.device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = F.relu(self.linear1(x))
@@ -35,7 +37,8 @@ class QTrainer:
         self.model: Linear_QNet = model
         self.device = self.model.device
         self.optimizer: optim.Adam = optim.Adam(model.parameters(), lr=self.lr)
-        self.criterion: nn.MSELoss = nn.MSELoss()
+        self.criterion: nn.MSELoss = nn.MSELoss().to(self.device)
+        self.model.to(self.device)  # Ensure model is on correct device
 
     def train_step(self, state: List[float], action: List[int], reward: float, 
                   next_state: List[float], done: Union[bool, Tuple[bool, ...]]) -> None:
@@ -51,18 +54,19 @@ class QTrainer:
             reward = torch.unsqueeze(reward, 0)
             done = (done, )
 
+        # Get current Q values
         pred = self.model(state)
         target = pred.clone()
         
         for idx in range(len(done)):
             Q_new = reward[idx]
             if not done[idx]:
-                Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
+                next_state_idx = next_state[idx].unsqueeze(0)  # Add batch dimension
+                Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state_idx))
 
             target[idx][torch.argmax(action[idx]).item()] = Q_new
-    
+
         self.optimizer.zero_grad()
         loss = self.criterion(target, pred)
         loss.backward()
-
         self.optimizer.step()

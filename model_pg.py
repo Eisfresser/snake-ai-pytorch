@@ -6,16 +6,14 @@ from typing import List, Tuple, Union, Optional
 from model_base import BaseModel
 
 class PolicyNet(BaseModel):
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, 
-                 device: Optional[Union[torch.device, str]] = None) -> None:
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, device: str) -> None:
         super().__init__(device=device)
         self.policy: nn.Sequential = nn.Sequential(
             nn.Linear(input_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, output_size),
             nn.Softmax(dim=-1)
-        )
-        self.to(self.device)
+        ).to(self.device)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.policy(x)
@@ -67,7 +65,7 @@ class PGTrainer:
 
     def train_step(self, state: List[float], action: int, reward: float, next_state: List[float], done: bool) -> None:
         # Convert to tensor just to maintain interface compatibility
-        state: torch.Tensor = torch.tensor(state, dtype=torch.float).to(self.device)
+        state = torch.as_tensor(state, dtype=torch.float, device=self.device)
         
         if len(state.shape) == 1:
             state = torch.unsqueeze(state, 0)

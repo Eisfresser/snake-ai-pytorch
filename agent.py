@@ -14,17 +14,17 @@ BATCH_SIZE = 1000
 LR = 0.001
 
 class Agent:
-    def __init__(self, model_type: str = 'dqn') -> None:
+    def __init__(self, device: str, model_type: str = 'dqn') -> None:
         self.n_games: int = 0
         self.epsilon: int = 0  # randomness
         self.gamma: float = 0.9  # discount rate
         self.memory: Deque[Tuple[np.ndarray, List[int], float, np.ndarray, bool]] = deque(maxlen=MAX_MEMORY)
         
         if model_type.lower() == 'pg':
-            self.model: Union[PolicyNet, Linear_QNet] = PolicyNet(input_size=11, hidden_size=256, output_size=3)
+            self.model: Union[PolicyNet, Linear_QNet] = PolicyNet(input_size=11, hidden_size=256, output_size=3, device=device)
             self.trainer: Union[PGTrainer, QTrainer] = PGTrainer(self.model, lr=LR, gamma=self.gamma)
         else:  # default to DQN
-            self.model = Linear_QNet(11, 256, 3)
+            self.model = Linear_QNet(11, 256, 3, device)
             self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     def get_state(self, game: SnakeGameAI) -> np.ndarray:

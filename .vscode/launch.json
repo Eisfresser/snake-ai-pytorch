@@ -10,6 +10,17 @@
             "args": [
                 "--model", "pg"
             ]
+        },
+        {
+            "name": "benchmark",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "benchmark.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--duration", "1",
+                "--type", "play"
+            ]
         }
     ]
 }

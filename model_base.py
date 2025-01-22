@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from abc import ABC, abstractmethod
-from typing import Optional, Union, Any
+from typing import Optional, Union
 import os
 
 class BaseModel(nn.Module, ABC):

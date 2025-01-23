@@ -35,7 +35,8 @@ class Agent:
             self.model = Linear_QNet(11, 256, 3, device)
             self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
-    def get_state(self, game: SnakeGameAI) -> np.ndarray:
+    @staticmethod
+    def get_state(game: SnakeGameAI) -> np.ndarray:
         head = game.snake[0]
         point_l = Point(head.x - 20, head.y)
         point_r = Point(head.x + 20, head.y)
@@ -128,9 +129,10 @@ def train() -> None:
     
     plot_scores: List[int] = []
     plot_mean_scores: List[float] = []
+    mean_score: int = 0
     total_score: int = 0
     record: int = 0
-    agent = Agent(model_type=args.model, device='cpu')
+    agent = Agent(model_type=args.model, device='mps')
     game = SnakeGameAI()
     
     while True:
@@ -163,11 +165,11 @@ def train() -> None:
             if agent.model_type == 'ppo':
                 # Calculate mean of recent metrics
                 recent_metrics = {k: np.mean(v[-10:]) if v else 0 for k, v in agent.ppo_metrics.items()}
-                print(f'Game {agent.n_games}, Score {score}, Record: {record}',
-                      f'PPO Metrics - KL: {recent_metrics["kl_divergence"]:.3f}, '
-                      f'Clip: {recent_metrics["clip_fraction"]:.3f}, '
-                      f'ExpVar: {recent_metrics["explained_variance"]:.3f}, '
-                      f'AvgAdv: {recent_metrics["average_advantage"]:.3f}')
+                print(f'Game {agent.n_games}, Score {score}, Record: {record}, Average Score: {mean_score:.5f}, ',
+                      f'PPO Metrics - KL: {recent_metrics["kl_divergence"]:.5f}, '
+                      f'Clip: {recent_metrics["clip_fraction"]:.5f}, '
+                      f'ExpVar: {recent_metrics["explained_variance"]:.5f}, '
+                      f'AvgAdv: {recent_metrics["average_advantage"]:.5f}')
             else:
                 print('Game', agent.n_games, 'Score', score, 'Record:', record)
 

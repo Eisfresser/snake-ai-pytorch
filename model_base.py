@@ -65,6 +65,6 @@ class BaseModel(nn.Module, ABC):
         """
         model_folder_path = './model'
         file_name = os.path.join(model_folder_path, file_name)
-        state_dict = torch.load(file_name, map_location=self.device)
+        state_dict = torch.load(file_name, map_location=self.device, weights_only=False)
         self.load_state_dict(state_dict)
         self.to(self.device)  # Ensure model is on correct device after loading

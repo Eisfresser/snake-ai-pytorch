@@ -196,9 +196,9 @@ class PPOTrainer:
                     next_value: float,
                     dones: List[bool],
                     gamma: float = 0.99,
-                    lambda_: float = 0.95) -> Tuple[torch.Tensor, torch.Tensor]:
+                    lambda_: float = 0.95) -> Tuple[List[float], List[float]]:
         """
-        Compute Generalized Advantage Estimation (GAE) efficiently using vectorized operations.
+        Compute Generalized Advantage Estimation (GAE) using numpy arrays for efficiency.
         
         Args:
             rewards: List of rewards for each step
@@ -209,35 +209,37 @@ class PPOTrainer:
             lambda_: GAE smoothing parameter
             
         Returns:
-            Tuple of (returns, advantages) as PyTorch tensors
+            Tuple of (returns, advantages) as Python lists
         """
-        # Convert inputs to tensors
-        rewards = torch.tensor(rewards, dtype=torch.float32, device=self.model.device)
-        values = torch.tensor(values, dtype=torch.float32, device=self.model.device)
-        dones = torch.tensor(dones, dtype=torch.float32, device=self.model.device)
+        # Convert inputs to numpy arrays for vectorized operations
+        rewards: np.ndarray = np.array(rewards, dtype=np.float32)
+        values: np.ndarray = np.array(values, dtype=np.float32)
+        dones: np.ndarray = np.array(dones, dtype=np.float32)
         
-        # Append next value to values tensor for easier computation
-        values = torch.cat([values, torch.tensor([next_value], device=self.model.device)])
+        # Initialize arrays
+        returns: np.ndarray = np.zeros_like(rewards)
+        advantages: np.ndarray = np.zeros_like(rewards)
         
-        # Create masks for non-terminal states
-        non_terminal = 1.0 - dones
-        
-        # Calculate TD errors
-        deltas = rewards + gamma * values[1:] * non_terminal - values[:-1]
-        
-        # Initialize advantages tensor
-        advantages = torch.zeros_like(rewards)
-        
-        # Compute GAE
-        gae = 0
+        # Calculate returns and advantages
+        last_gae: float = 0.0
         for t in reversed(range(len(rewards))):
-            gae = deltas[t] + gamma * lambda_ * non_terminal[t] * gae
-            advantages[t] = gae
+            if t == len(rewards) - 1:
+                next_non_terminal: float = 1.0 - dones[t]
+                next_val: float = next_value
+            else:
+                next_non_terminal: float = 1.0 - dones[t]
+                next_val: float = values[t + 1]
             
-        # Calculate returns
-        returns = advantages + values[:-1]
+            delta: float = rewards[t] + gamma * next_val * next_non_terminal - values[t]
+            last_gae = delta + gamma * lambda_ * next_non_terminal * last_gae
+            advantages[t] = last_gae
+            
+        returns = advantages + values
         
-        return returns, advantages
+        # Normalize advantages
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        
+        return returns.tolist(), advantages.tolist()
 
     def update(self, 
                states: torch.Tensor,
